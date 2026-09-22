@@ -1,19 +1,23 @@
-// jurisdictions.ts
-import type { HttpClient } from '../transport/http-client';
-import type { RequestOptions } from '../transport/types';
-import type { Jurisdiction, JurisdictionQuery } from '../models/jurisdiction';
+import type { Jurisdiction, JurisdictionQuery } from '../models/jurisdiction.js';
+import type { HttpClient } from '../transport/http-client.js';
+import type { RequestOptions } from '../transport/types.js';
 
 export class JurisdictionsResource {
   constructor(private readonly http: HttpClient) {}
 
-  list(query: JurisdictionQuery = {}, opts?: RequestOptions): Promise<Jurisdiction[]> {
-    const qs = new URLSearchParams(
-      Object.entries(query).filter(([, v]) => v != null) as [string, string][],
-    ).toString();
-    return this.http.send({
+  async list(
+    query: JurisdictionQuery = {},
+    options: RequestOptions = {},
+  ): Promise<Jurisdiction[]> {
+    const params = new URLSearchParams();
+    if (query.country) params.set('country', query.country);
+    if (query.state) params.set('state', query.state);
+    const qs = params.toString();
+
+    return this.http.send<Jurisdiction[]>({
       method: 'GET',
       path: `/jurisdictions${qs ? `?${qs}` : ''}`,
-      opts,
+      options,
     });
   }
 }

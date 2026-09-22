@@ -1,2 +1,2 @@
-//generated at build time or hardcoded + checked in CI
-export const version = '0.1.0';
+/** Single source of truth for the SDK version. */
+export const VERSION = '0.1.0';

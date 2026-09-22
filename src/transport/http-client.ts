@@ -1,113 +1,122 @@
 import {
-  DEFAULT_BASE_URL, DEFAULT_RETRY, DEFAULT_TIMEOUT_MS,
-  type ClientOptions, type RetryOptions,
-} from '../config';
-import { ConnectionError, TimeoutError, errorFromResponse, type SalesTaxError } from '../errors';
-import { computeDelay, parseRetryAfter } from './retry';
-import { buildUserAgent } from './user-agent';
-import type { Hooks, RequestOptions } from './types';
+  DEFAULT_RETRY,
+  MAX_BATCH_SIZE,
+  type ClientOptions,
+  type RetryPolicy,
+} from '../config.js';
+import { SalesTaxError, errorFromResponse, TimeoutError, ConnectionError,
+         type ErrorResponseBody } from '../errors/index.js';
+import { computeDelayMs, parseRetryAfter } from './retry.js';
+import { buildUserAgent } from './user-agent.js';
+import type { Hooks, RequestOptions } from './types.js';
 
-export interface HttpRequest {
+const REQUEST_ID_HEADERS = ['x-request-id', 'request-id', 'X-Request-Id'] as const;
+
+interface SendParams {
   method: 'GET' | 'POST';
   path: string;
   body?: unknown;
-  opts?: RequestOptions;
+  options?: RequestOptions;
 }
 
 export class HttpClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
-  private readonly retry: RetryOptions;
+  private readonly retry: RetryPolicy;
   private readonly defaultHeaders: Record<string, string>;
-  private readonly fetchImpl: typeof fetch;
+  private readonly fetchImpl: typeof globalThis.fetch;
   private readonly hooks: Hooks;
 
   constructor(options: ClientOptions) {
     const apiKey = options.apiKey ?? process.env.SALESTAX_API_KEY;
     if (!apiKey) {
       throw new ConnectionError(
-        'Missing API key. Pass apiKey or set SALESTAX_API_KEY.',
-        { code: 'MISSING_API_KEY', retryable: false },
+        'Missing API key. Pass `apiKey` or set the SALESTAX_API_KEY environment variable.',
+        'MISSING_API_KEY',
+        false,
       );
     }
     this.apiKey = apiKey;
-    this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
-    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.baseUrl = (options.baseUrl ?? 'https://api.salestaxcalculatorapi.com/v1').replace(/\/+$/, '');
+    this.timeoutMs = options.timeoutMs ?? 30_000;
     this.retry = { ...DEFAULT_RETRY, ...options.retry };
     this.defaultHeaders = options.defaultHeaders ?? {};
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.hooks = options.hooks ?? {};
   }
 
-  async send<T>(req: HttpRequest): Promise<T> {
+  async send<T>(params: SendParams): Promise<T> {
     let attempt = 0;
     let lastError: SalesTaxError | undefined;
 
     while (attempt <= this.retry.maxRetries) {
       try {
-        return await this.execute<T>(req, attempt);
+        return await this.execute<T>(params, attempt);
       } catch (err) {
-        lastError = err as SalesTaxError;
-        const canRetry =
-          lastError.retryable === true &&
-          attempt < this.retry.maxRetries &&
-          req.opts?.retryable !== false;
+        if (!(err instanceof SalesTaxError)) throw err;
+        lastError = err;
 
-        if (!canRetry) throw lastError;
+        const canRetry =
+          err.retryable &&
+          params.options?.retryable !== false &&
+          attempt < this.retry.maxRetries;
+
+        if (!canRetry) throw err;
 
         const retryAfterMs =
-          (lastError as { retryAfterMs?: number }).retryAfterMs;
-        const delay = computeDelay(attempt, this.retry, retryAfterMs);
+          err instanceof Object && 'retryAfterMs' in err
+            ? (err as { retryAfterMs?: number }).retryAfterMs
+            : undefined;
+        const delay = computeDelayMs(attempt, this.retry, retryAfterMs);
 
-        this.hooks.onRetry?.({ attempt: attempt + 1, delayMs: delay, error: lastError });
-        await new Promise((r) => setTimeout(r, delay));
+        this.safeHook('onRetry', { attempt: attempt + 1, delayMs: delay, error: err });
+        await sleep(delay);
         attempt++;
       }
     }
+
     throw lastError!;
   }
 
-  private async execute<T>(req: HttpRequest, attempt: number): Promise<T> {
-    const url = `${this.baseUrl}${req.path}`;
+  private async execute<T>(params: SendParams, attempt: number): Promise<T> {
+    const url = `${this.baseUrl}${params.path}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      Accept: 'application/json',
       'User-Agent': buildUserAgent(),
       ...this.defaultHeaders,
-      ...req.opts?.headers,
+      ...params.options?.headers,
     };
-    if (req.opts?.idempotencyKey) {
-      headers['Idempotency-Key'] = req.opts.idempotencyKey;
+    if (params.options?.idempotencyKey) {
+      headers['Idempotency-Key'] = params.options.idempotencyKey;
     }
 
-    const started = Date.now();
-    this.hooks.onRequest?.({ method: req.method, url, attempt });
+    const startedAt = Date.now();
+    this.safeHook('onRequest', { method: params.method, url, attempt });
 
     try {
       const res = await this.fetchImpl(url, {
-        method: req.method,
+        method: params.method,
         headers,
-        body: req.body ? JSON.stringify(req.body) : undefined,
-        signal: req.opts?.signal ?? controller.signal,
+        body: params.body !== undefined ? JSON.stringify(params.body) : undefined,
+        signal: params.options?.signal ?? controller.signal,
       });
 
-      const requestId =
-        res.headers.get('x-request-id') ?? res.headers.get('request-id') ?? undefined;
-
-      this.hooks.onResponse?.({
+      const requestId = extractRequestId(res.headers);
+      this.safeHook('onResponse', {
         status: res.status,
         url,
-        durationMs: Date.now() - started,
+        durationMs: Date.now() - startedAt,
         requestId,
       });
 
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
+        const body = (await safeJson(res)) as ErrorResponseBody;
         throw errorFromResponse(
           res.status,
           body,
@@ -116,17 +125,52 @@ export class HttpClient {
         );
       }
 
-      return (await res.json()) as T;
+      return (await safeJson(res)) as T;
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new TimeoutError(this.timeoutMs);
       }
-      if (err instanceof Error && !('retryable' in err)) {
-        throw new ConnectionError(err.message);
-      }
-      throw err;
+      if (err instanceof SalesTaxError) throw err;
+      if (err instanceof Error) throw new ConnectionError(err.message);
+      throw new ConnectionError(String(err));
     } finally {
       clearTimeout(timer);
     }
   }
+
+  private safeHook<K extends keyof Hooks>(name: K, info: Parameters<NonNullable<Hooks[K]>>[0]): void {
+    const hook = this.hooks[name];
+    if (!hook) return;
+    try {
+      (hook as (arg: typeof info) => void)(info);
+    } catch {
+      // Never let a buggy hook break the request flow.
+    }
+  }
 }
+
+function extractRequestId(headers: Headers): string | undefined {
+  for (const key of REQUEST_ID_HEADERS) {
+    const value = headers.get(key);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+async function safeJson(res: Response): Promise<unknown> {
+  const text = await res.text().catch(() => '');
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Re-export for convenience in tests.
+export { MAX_BATCH_SIZE };

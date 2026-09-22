@@ -1,4 +1,4 @@
-import type { SalesTaxError } from '../errors';
+import type { SalesTaxError } from '../errors/base.js';
 
 export interface RequestOptions {
   /** Correlation key for safe retries on POST. */
@@ -11,10 +11,27 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
+export interface RequestInfo {
+  method: string;
+  url: string;
+  attempt: number;
+}
+
+export interface ResponseInfo {
+  status: number;
+  url: string;
+  durationMs: number;
+  requestId?: string;
+}
+
+export interface RetryInfo {
+  attempt: number;
+  delayMs: number;
+  error: SalesTaxError;
+}
+
 export interface Hooks {
-  onRequest?: (info: { method: string; url: string; attempt: number }) => void;
-  onResponse?: (info: {
-    status: number; url: string; durationMs: number; requestId?: string;
-  }) => void;
-  onRetry?: (info: { attempt: number; delayMs: number; error: SalesTaxError }) => void;
+  onRequest?: (info: RequestInfo) => void;
+  onResponse?: (info: ResponseInfo) => void;
+  onRetry?: (info: RetryInfo) => void;
 }

@@ -1,16 +1,28 @@
-import type { RetryOptions } from '../config';
+import type { RetryPolicy } from '../config.js';
 
-export function computeDelay(attempt: number, opts: RetryOptions, retryAfterMs?: number): number {
-  if (retryAfterMs != null) return retryAfterMs;
-  const exp = opts.initialDelayMs * Math.pow(opts.backoffFactor, attempt);
-  const capped = Math.min(exp, opts.maxDelayMs);
-  return opts.jitter ? Math.random() * capped : capped;
+/** Return the delay in milliseconds before retry `attempt` (0-indexed). */
+export function computeDelayMs(
+  attempt: number,
+  policy: RetryPolicy,
+  retryAfterMs?: number,
+): number {
+  if (retryAfterMs != null) return Math.max(0, retryAfterMs);
+
+  const exponential = policy.initialDelayMs * Math.pow(policy.backoffFactor, attempt);
+  const capped = Math.min(exponential, policy.maxDelayMs);
+  return policy.jitter ? Math.floor(Math.random() * capped) : Math.floor(capped);
 }
 
-export function parseRetryAfter(header: string | null): number | undefined {
-  if (!header) return undefined;
-  const seconds = Number(header);
-  if (!Number.isNaN(seconds)) return seconds * 1000;
-  const date = Date.parse(header);
-  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
+/**
+ * Parse a `Retry-After` header into milliseconds.
+ * Supports both the delay-seconds and HTTP-date forms per RFC 7231.
+ */
+export function parseRetryAfter(value: string | null | undefined): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
+
+  const when = Date.parse(trimmed);
+  if (Number.isNaN(when)) return undefined;
+  return Math.max(0, when - Date.now());
 }

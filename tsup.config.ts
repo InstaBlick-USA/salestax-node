@@ -9,4 +9,5 @@ export default defineConfig({
   treeshake: true,
   target: 'node18',
   outExtension: ({ format }) => ({ js: format === 'cjs' ? '.cjs' : '.js' }),
+  outDir: 'dist',
 });

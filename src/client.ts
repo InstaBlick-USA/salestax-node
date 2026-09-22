@@ -1,9 +1,21 @@
-import type { ClientOptions } from './config';
-import { HttpClient } from './transport/http-client';
-import { TaxResource } from './resources/tax';
-import { RatesResource } from './resources/rates';
-import { JurisdictionsResource } from './resources/jurisdictions';
+import type { ClientOptions } from './config.js';
+import { HttpClient } from './transport/http-client.js';
+import { JurisdictionsResource } from './resources/jurisdictions.js';
+import { RatesResource } from './resources/rates.js';
+import { TaxResource } from './resources/tax.js';
 
+/**
+ * Client for the Sales Tax Calculator API.
+ *
+ * @example
+ * ```ts
+ * import { SalesTaxClient } from 'salestax-node';
+ *
+ * const client = SalesTaxClient.fromEnv();
+ * const tax = await client.tax.calculate({ zipCode: '90210', amount: 100 });
+ * console.log(tax.taxAmount);
+ * ```
+ */
 export class SalesTaxClient {
   readonly tax: TaxResource;
   readonly rates: RatesResource;
@@ -16,7 +28,7 @@ export class SalesTaxClient {
     this.jurisdictions = new JurisdictionsResource(http);
   }
 
-  /** Construct using SALESTAX_API_KEY from the environment. */
+  /** Construct using the `SALESTAX_API_KEY` environment variable. */
   static fromEnv(overrides: Omit<ClientOptions, 'apiKey'> = {}): SalesTaxClient {
     return new SalesTaxClient(overrides);
   }

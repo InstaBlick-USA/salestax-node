@@ -1,0 +1,46 @@
+# -- Dependencies --
+node_modules/
+
+# -- Build output --
+dist/
+*.tsbuildinfo
+*.tgz
+
+# -- Test / coverage artifacts --
+coverage/
+.nyc_output/
+.vitest/
+
+# -- Vite / Vitest caches --
+node_modules/.vite/
+node_modules/.vitest/
+
+# -- Logs --
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# -- Editors / IDEs --
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+*.swp
+*.swo
+*~
+
+# -- OS noise --
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# -- Env / secrets (never commit) --
+.env
+.env.*
+!.env.example
+
+# -- npm cache --
+.npm/
