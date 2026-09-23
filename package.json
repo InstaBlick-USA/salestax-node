@@ -1,7 +1,7 @@
 {
   "name": "salestax-node",
-  "version": "0.1.0",
-  "description": "Official Node.js SDK for Sales Tax Calculator API — real-time sales tax across 70+ countries, 51 US jurisdictions, and batch processing.",
+  "version": "0.2.0",
+  "description": "Official Node.js SDK for the Sales Tax Calculator API — immutable sales tax calculations, transactions, adjustments, batches, and coverage checks.",
   "license": "MIT",
   "homepage": "https://salestaxcalculatorapi.com",
   "repository": {
@@ -18,6 +18,7 @@
     "api-client",
     "vat",
     "gst",
+    "hst",
     "typescript"
   ],
   "type": "module",
@@ -57,10 +58,10 @@
     "@types/node": "^20.11.0",
     "@vitest/coverage-v8": "^1.4.0",
     "eslint": "^8.57.0",
-    "globals": "^17.12.0",
+    "globals": "^15.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
-    "typescript-eslint": "^8.70.1",
+    "typescript-eslint": "^8.0.0",
     "vitest": "^1.4.0"
   }
 }

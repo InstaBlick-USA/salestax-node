@@ -1,14 +1,12 @@
 import type { SalesTaxError } from '../errors/base.js';
 
 export interface RequestOptions {
-  /** Correlation key for safe retries on POST. */
-  idempotencyKey?: string;
-  /** Per-request header overrides. */
-  headers?: Record<string, string>;
-  /** Disable retries for this request only. */
-  retryable?: boolean;
-  /** Caller-supplied abort signal. */
-  signal?: AbortSignal;
+  idempotencyKey?: string
+  headers?: Record<string, string>
+  retryable?: boolean
+  signal?: AbortSignal
+  /** Request an authorized audit expansion. */
+  expand?: 'audit'
 }
 
 export interface RequestInfo {
