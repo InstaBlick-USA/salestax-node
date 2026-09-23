@@ -1,16 +1,23 @@
 import {
+  DEFAULT_BASE_URL,
   DEFAULT_RETRY,
-  MAX_BATCH_SIZE,
   type ClientOptions,
   type RetryPolicy,
 } from '../config.js';
-import { SalesTaxError, errorFromResponse, TimeoutError, ConnectionError,
-         type ErrorResponseBody } from '../errors/index.js';
+import {
+  SalesTaxError,
+  ValidationError,
+  errorFromResponse,
+  TimeoutError,
+  ConnectionError,
+  type ErrorResponseBody,
+} from '../errors/index.js';
 import { computeDelayMs, parseRetryAfter } from './retry.js';
 import { buildUserAgent } from './user-agent.js';
 import type { Hooks, RequestOptions } from './types.js';
 
 const REQUEST_ID_HEADERS = ['x-request-id', 'request-id', 'X-Request-Id'] as const;
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,254}$/;
 
 interface SendParams {
   method: 'GET' | 'POST';
@@ -38,7 +45,7 @@ export class HttpClient {
       );
     }
     this.apiKey = apiKey;
-    this.baseUrl = (options.baseUrl ?? 'https://api.salestaxcalculatorapi.com/v1').replace(/\/+$/, '');
+    this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.retry = { ...DEFAULT_RETRY, ...options.retry };
     this.defaultHeaders = options.defaultHeaders ?? {};
@@ -47,6 +54,15 @@ export class HttpClient {
   }
 
   async send<T>(params: SendParams): Promise<T> {
+    const idempotencyKey = params.options?.idempotencyKey;
+    if (idempotencyKey !== undefined && !IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+      throw new ValidationError(
+        'invalid_idempotency_key',
+        'Idempotency-Key must be 8-255 characters matching [A-Za-z0-9][A-Za-z0-9._:-]{7,254}',
+        { statusCode: 400, param: 'Idempotency-Key' },
+      );
+    }
+
     let attempt = 0;
     let lastError: SalesTaxError | undefined;
 
@@ -80,7 +96,7 @@ export class HttpClient {
   }
 
   private async execute<T>(params: SendParams, attempt: number): Promise<T> {
-    const url = `${this.baseUrl}${params.path}`;
+    const url = this.buildUrl(params);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -138,6 +154,14 @@ export class HttpClient {
     }
   }
 
+  private buildUrl(params: SendParams): string {
+    const base = `${this.baseUrl}${params.path}`;
+    const expand = params.options?.expand;
+    if (!expand) return base;
+    const separator = params.path.includes('?') ? '&' : '?';
+    return `${base}${separator}expand=${encodeURIComponent(expand)}`;
+  }
+
   private safeHook<K extends keyof Hooks>(name: K, info: Parameters<NonNullable<Hooks[K]>>[0]): void {
     const hook = this.hooks[name];
     if (!hook) return;
@@ -171,6 +195,3 @@ async function safeJson(res: Response): Promise<unknown> {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-// Re-export for convenience in tests.
-export { MAX_BATCH_SIZE };

@@ -5,72 +5,82 @@ import {
   ServerError,
   TimeoutError,
   ValidationError,
-} from '../../src/index.js';
-import { makeMockFetch } from './helpers.js';
+} from '../../src/index';
+import { makeMockFetch } from './helpers';
+
+const validParams = {
+  currency: 'CAD',
+  tax_behavior: 'exclusive' as const,
+  billing_event: 'subscription_start' as const,
+  seller: {
+    country: 'CA',
+    channel_role: 'direct_legal_supplier' as const,
+    registrations: [
+      { country: 'CA', state: 'ON', type: 'gst_hst', effective_from: '2026-01-01' },
+    ],
+  },
+  customer: {
+    type: 'consumer' as const,
+    address: { country: 'CA', state: 'ON', postal_code: 'M5V 2T6' },
+  },
+  lines: [{ reference: 'subscription', amount: '100.00', tax_code: 'saas' }],
+};
+
+function makeClient(
+  responses: Parameters<typeof makeMockFetch>[0] = [],
+  opts: Record<string, unknown> = {},
+) {
+  const { fn, calls } = makeMockFetch(responses);
+  const client = new SalesTaxClient({ apiKey: 'stca_test', fetch: fn, ...opts });
+  return { client, fn, calls };
+}
 
 describe('HttpClient', () => {
-  it('sends auth, UA, and content-type headers', async () => {
-    const { fn, calls } = makeMockFetch([{ status: 200, body: { taxAmount: 9.75 } }]);
-    const client = new SalesTaxClient({ apiKey: 'sk_test', fetch: fn });
-
-    await client.tax.calculate({ zipCode: '90210', amount: 100 });
-
+  it('sends auth and UA headers', async () => {
+    const { client, calls } = makeClient([{ status: 201, body: { id: 'calc_1' } }]);
+    await client.calculations.create(validParams);
     const headers = calls[0]!.init.headers as Record<string, string>;
-    expect(headers['Authorization']).toBe('Bearer sk_test');
+    expect(headers['Authorization']).toBe('Bearer stca_test');
     expect(headers['Content-Type']).toBe('application/json');
     expect(headers['User-Agent']).toMatch(/^salestax-node\//);
   });
 
   it('retries on 500 then succeeds', async () => {
-    const { fn, calls } = makeMockFetch([
-      { status: 500, body: { code: 'SERVER' } },
-      { status: 200, body: { taxAmount: 9.75 } },
-    ]);
-    const client = new SalesTaxClient({
-      apiKey: 'sk_test',
-      fetch: fn,
-      retry: { maxRetries: 2, initialDelayMs: 0, jitter: false },
-    });
-
-    const res = await client.tax.calculate({ zipCode: '90210', amount: 100 });
-    expect(res.taxAmount).toBe(9.75);
+    const { client, calls } = makeClient(
+      [
+        { status: 500, body: { code: 'internal_error' } },
+        { status: 201, body: { id: 'calc_1' } },
+      ],
+      { retry: { maxRetries: 2, initialDelayMs: 0, jitter: false } },
+    );
+    await client.calculations.create(validParams);
     expect(calls.length).toBe(2);
   });
 
   it('does not retry 400 validation errors', async () => {
-    const { fn, calls } = makeMockFetch([
-      { status: 400, body: { code: 'BAD', message: 'nope' } },
+    const { client, calls } = makeClient([
+      { status: 400, body: { code: 'invalid_request', detail: 'bad' } },
     ]);
-    const client = new SalesTaxClient({ apiKey: 'sk_test', fetch: fn });
-
-    await expect(client.tax.calculate({ zipCode: '90210', amount: 100 }))
-      .rejects.toBeInstanceOf(ValidationError);
+    await expect(client.calculations.create(validParams)).rejects.toBeInstanceOf(ValidationError);
     expect(calls.length).toBe(1);
   });
 
   it('honors Retry-After on 429', async () => {
-    const { fn, calls } = makeMockFetch([
-      { status: 429, headers: { 'retry-after': '0' }, body: { code: 'RATE_LIMITED' } },
-      { status: 200, body: { taxAmount: 9.75 } },
+    const { client, calls } = makeClient([
+      { status: 429, headers: { 'retry-after': '0' }, body: { code: 'rate_limit_exceeded' } },
+      { status: 201, body: { id: 'calc_1' } },
     ]);
-    const client = new SalesTaxClient({ apiKey: 'sk_test', fetch: fn });
-
-    await client.tax.calculate({ zipCode: '90210', amount: 100 });
+    await client.calculations.create(validParams);
     expect(calls.length).toBe(2);
   });
 
-  it('surfaces retryAfterMs on RateLimitError', async () => {
-    const { fn } = makeMockFetch([
-      { status: 429, headers: { 'retry-after': '2' }, body: { code: 'RATE_LIMITED' } },
-    ]);
-    const client = new SalesTaxClient({
-      apiKey: 'sk_test',
-      fetch: fn,
-      retry: { maxRetries: 0 },
-    });
-
+  it('surfaces retry_after_seconds from body', async () => {
+    const { client } = makeClient(
+      [{ status: 429, body: { code: 'rate_limit_exceeded', retry_after_seconds: 2 } }],
+      { retry: { maxRetries: 0 } },
+    );
     try {
-      await client.tax.calculate({ zipCode: '90210', amount: 100 });
+      await client.calculations.create(validParams);
       throw new Error('expected RateLimitError');
     } catch (err) {
       expect(err).toBeInstanceOf(RateLimitError);
@@ -80,29 +90,17 @@ describe('HttpClient', () => {
 
   it('maps AbortError to TimeoutError', async () => {
     const abort = Object.assign(new Error('aborted'), { name: 'AbortError' });
-    const { fn } = makeMockFetch([{ throw: abort }]);
-    const client = new SalesTaxClient({
-      apiKey: 'sk_test',
-      fetch: fn,
-      retry: { maxRetries: 0 },
-    });
-
-    await expect(client.tax.calculate({ zipCode: '90210', amount: 100 }))
-      .rejects.toBeInstanceOf(TimeoutError);
+    const { client } = makeClient([{ throw: abort }], { retry: { maxRetries: 0 } });
+    await expect(client.calculations.create(validParams)).rejects.toBeInstanceOf(TimeoutError);
   });
 
-  it('surfaces request id from response headers', async () => {
-    const { fn } = makeMockFetch([
-      { status: 500, headers: { 'x-request-id': 'req_abc' }, body: {} },
-    ]);
-    const client = new SalesTaxClient({
-      apiKey: 'sk_test',
-      fetch: fn,
-      retry: { maxRetries: 0 },
-    });
-
+  it('surfaces request_id from body', async () => {
+    const { client } = makeClient(
+      [{ status: 500, body: { code: 'internal_error', request_id: 'req_abc' } }],
+      { retry: { maxRetries: 0 } },
+    );
     try {
-      await client.tax.calculate({ zipCode: '90210', amount: 100 });
+      await client.calculations.create(validParams);
       throw new Error('expected ServerError');
     } catch (err) {
       expect(err).toBeInstanceOf(ServerError);
@@ -110,26 +108,65 @@ describe('HttpClient', () => {
     }
   });
 
-  it('sets Idempotency-Key header when provided', async () => {
-    const { fn, calls } = makeMockFetch([{ status: 200, body: { count: 0, results: [] } }]);
-    const client = new SalesTaxClient({ apiKey: 'sk_test', fetch: fn });
-
-    await client.tax.calculateBatch(
-      [{ zipCode: '90210', amount: 1 }],
-      { idempotencyKey: 'order-123' },
+  it('surfaces request id from response headers', async () => {
+    const { client } = makeClient(
+      [{ status: 500, headers: { 'x-request-id': 'req_hdr' }, body: {} }],
+      { retry: { maxRetries: 0 } },
     );
+    try {
+      await client.calculations.create(validParams);
+      throw new Error('expected ServerError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ServerError);
+      expect((err as ServerError).requestId).toBe('req_hdr');
+    }
+  });
 
+  it('surfaces field pointer from problem errors array', async () => {
+    const { client } = makeClient([
+      {
+        status: 400,
+        body: {
+          code: 'invalid_request',
+          detail: 'amount must be a decimal string',
+          errors: [{ pointer: '/lines/0/amount', message: 'invalid' }],
+        },
+      },
+    ]);
+    try {
+      await client.calculations.create(validParams);
+      throw new Error('expected ValidationError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).param).toBe('/lines/0/amount');
+    }
+  });
+
+  it('sets Idempotency-Key header when provided', async () => {
+    const { client, calls } = makeClient([{ status: 201, body: { id: 'calc_1' } }]);
+    await client.calculations.create(validParams, { idempotencyKey: 'order-12345' });
     const headers = calls[0]!.init.headers as Record<string, string>;
-    expect(headers['Idempotency-Key']).toBe('order-123');
+    expect(headers['Idempotency-Key']).toBe('order-12345');
   });
 
   it('omits Idempotency-Key header when not provided', async () => {
-    const { fn, calls } = makeMockFetch([{ status: 200, body: { taxAmount: 1 } }]);
-    const client = new SalesTaxClient({ apiKey: 'sk_test', fetch: fn });
-
-    await client.tax.calculate({ zipCode: '90210', amount: 100 });
-
+    const { client, calls } = makeClient([{ status: 201, body: { id: 'calc_1' } }]);
+    await client.calculations.create(validParams);
     const headers = calls[0]!.init.headers as Record<string, string>;
     expect(headers['Idempotency-Key']).toBeUndefined();
-    });
+  });
+
+  it('appends expand=audit when requested', async () => {
+    const { client, calls } = makeClient([{ status: 201, body: { id: 'calc_1' } }]);
+    await client.calculations.create(validParams, { expand: 'audit' });
+    expect(calls[0]!.url).toContain('expand=audit');
+  });
+
+  it('uses DEFAULT_BASE_URL without /v1 suffix', async () => {
+    const { client, calls } = makeClient([{ status: 201, body: { id: 'calc_1' } }]);
+    await client.calculations.create(validParams);
+    expect(calls[0]!.url).toBe(
+      'https://api.salestaxcalculatorapi.com/v1/calculations',
+    );
+  });
 });

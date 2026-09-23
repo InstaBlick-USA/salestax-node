@@ -1,22 +1,25 @@
 /**
  * Official Node.js SDK for the Sales Tax Calculator API.
  *
- * Real-time sales tax for 70+ countries, 51 US jurisdictions, and 13 Canadian
- * provinces. Batch up to 100 transactions per call.
+ * Immutable sales tax calculations, transactions, adjustments, batches,
+ * and coverage checks.
  *
  * Docs: https://salestaxcalculatorapi.com/docs
  */
 
-export { SalesTaxClient } from './client.js';
+export { SalesTaxClient } from './client'
 export {
   DEFAULT_BASE_URL,
   DEFAULT_RETRY,
   DEFAULT_TIMEOUT_MS,
   ENV_API_KEY,
   MAX_BATCH_SIZE,
+  MAX_LINES_PER_CALCULATION,
+  MAX_LINES_PER_ADJUSTMENT,
+  MAX_REGISTRATIONS,
   type ClientOptions,
   type RetryPolicy,
-} from './config.js';
+} from './config'
 
 export {
   SalesTaxError,
@@ -33,17 +36,26 @@ export {
   errorFromResponse,
   type SalesTaxErrorOptions,
   type ApiErrorOptions,
-} from './errors/index.js';
+  type ErrorResponseBody,
+} from './errors'
 
 export type {
-  CalculateTaxParams,
-  TaxBreakdownEntry,
-  TaxCalculation,
-  BatchResult,
-  TaxRate,
-  Jurisdiction,
-  JurisdictionQuery,
-} from './models/index.js';
+  Currency, TaxBehavior, BillingEvent, SellerChannelRole, CustomerType,
+  TransactionType, Outcome, TaxIdType, LocationEvidenceKind, JurisdictionLevel,
+  Address, TaxIdInput, LocationEvidence, SellerRegistration, Seller, Customer,
+  CalculationLineCreate, CalculationLine, Jurisdiction, TaxComponent,
+  EvidenceResult, AuditExpansion,
+  CalculationCreate, Calculation, CalculationBatchCreate,
+  CalculationBatchStatus, CalculationBatchItemStatus,
+  CalculationBatchItem, CalculationBatch,
+  TransactionCreate, Transaction,
+  AdjustmentReason, AdjustmentAmountLineCreate, AdjustmentQuantityLineCreate,
+  AdjustmentLineCreate, AdjustmentCreate, AdjustmentLine, Adjustment,
+  AdjustmentPage, ListAdjustmentsParams,
+  CoverageQuery, Qualification, CoverageCalculation, Obligation,
+  TaxIdValidation, SourceBasis, EvidenceRequired, Coverage,
+  ProblemCode, FieldProblem, Problem,
+} from './models'
 
 export type {
   Hooks,
@@ -51,6 +63,6 @@ export type {
   RequestInfo,
   ResponseInfo,
   RetryInfo,
-} from './transport/types.js';
+} from './transport/types'
 
-export { VERSION } from './version.js';
+export { VERSION } from './version'

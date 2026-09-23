@@ -1,35 +1,56 @@
-import type { ClientOptions } from './config.js';
-import { HttpClient } from './transport/http-client.js';
-import { JurisdictionsResource } from './resources/jurisdictions.js';
-import { RatesResource } from './resources/rates.js';
-import { TaxResource } from './resources/tax.js';
+import type { ClientOptions } from './config'
+import { HttpClient } from './transport/http-client'
+import { BatchesResource } from './resources/batches'
+import { CalculationsResource } from './resources/calculations'
+import { CoverageResource } from './resources/coverage'
+import { TransactionsResource } from './resources/transactions'
 
 /**
  * Client for the Sales Tax Calculator API.
  *
  * @example
  * ```ts
- * import { SalesTaxClient } from 'salestax-node';
+ * import { SalesTaxClient } from 'salestax-node'
  *
- * const client = SalesTaxClient.fromEnv();
- * const tax = await client.tax.calculate({ zipCode: '90210', amount: 100 });
- * console.log(tax.taxAmount);
+ * const client = SalesTaxClient.fromEnv()
+ *
+ * const calc = await client.calculations.create({
+ *   currency: 'CAD',
+ *   tax_behavior: 'exclusive',
+ *   billing_event: 'subscription_start',
+ *   seller: {
+ *     country: 'CA',
+ *     channel_role: 'direct_legal_supplier',
+ *     registrations: [
+ *       { country: 'CA', state: 'ON', type: 'gst_hst', effective_from: '2026-01-01' },
+ *     ],
+ *   },
+ *   customer: {
+ *     type: 'consumer',
+ *     address: { country: 'CA', state: 'ON', postal_code: 'M5V 2T6' },
+ *   },
+ *   lines: [{ reference: 'subscription', amount: '100.00', quantity: '1', tax_code: 'saas' }],
+ * }, { idempotencyKey: 'order-1001-abc12345' })
+ *
+ * console.log(calc.outcome) // 'calculated'
+ * console.log(calc.tax)     // '13.00'
  * ```
  */
 export class SalesTaxClient {
-  readonly tax: TaxResource;
-  readonly rates: RatesResource;
-  readonly jurisdictions: JurisdictionsResource;
+  readonly calculations: CalculationsResource
+  readonly transactions: TransactionsResource
+  readonly batches: BatchesResource
+  readonly coverage: CoverageResource
 
   constructor(options: ClientOptions = {}) {
-    const http = new HttpClient(options);
-    this.tax = new TaxResource(http, options.chunkBatch ?? false);
-    this.rates = new RatesResource(http);
-    this.jurisdictions = new JurisdictionsResource(http);
+    const http = new HttpClient(options)
+    this.calculations = new CalculationsResource(http)
+    this.transactions = new TransactionsResource(http)
+    this.batches = new BatchesResource(http)
+    this.coverage = new CoverageResource(http)
   }
 
-  /** Construct using the `SALESTAX_API_KEY` environment variable. */
   static fromEnv(overrides: Omit<ClientOptions, 'apiKey'> = {}): SalesTaxClient {
-    return new SalesTaxClient(overrides);
+    return new SalesTaxClient(overrides)
   }
 }
