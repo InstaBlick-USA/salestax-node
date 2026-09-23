@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-09-23
+
+### Fixed
+
+- Replaced the obsolete pre-0.2 README examples with the current resource API.
+- Documented transactions, adjustments, batches, coverage checks, audit expansion, typed errors, idempotency, and client defaults.
+- Standardized setup examples on `SALESTAX_API_KEY` and the public API base URL.
+
+This release changes package documentation only. The request and response API is unchanged from 0.2.0.
+
 ## [0.2.0] - 2026-09-23
 
 ### Changed

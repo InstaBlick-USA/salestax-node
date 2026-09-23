@@ -1,6 +1,6 @@
 {
   "name": "salestax-node",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Official Node.js SDK for the Sales Tax Calculator API — immutable sales tax calculations, transactions, adjustments, batches, and coverage checks.",
   "license": "MIT",
   "homepage": "https://salestaxcalculatorapi.com",
