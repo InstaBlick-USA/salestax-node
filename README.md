@@ -76,7 +76,6 @@ const client = new SalesTaxClient({
 ## Also Available For
 
 - [salestax-python](https://github.com/InstaBlick-USA/salestax-python) — Python
-- [salestax-ruby](https://github.com/InstaBlick-USA/salestax-ruby) — Ruby
 
 ## Documentation
 
